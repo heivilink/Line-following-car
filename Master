@@ -1,0 +1,199 @@
+const int S0 = A1;
+const int S1 = A2;
+const int S2 = A3;
+const int S3 = A4;
+const int signal = A5;
+
+const int in1 = 5;
+const int in2 = 6;   // right motor
+const int in3 = 9;   // left motor
+const int in4 = 10;
+
+const int rightSensor = 3;
+const int centerSensor = 7;
+const int leftSensor = 11;
+
+unsigned long red1;
+unsigned long green1;
+unsigned long blue1;
+
+int lastDirection = 0;   // -1 = left, 1 = right, 0 = center
+int rightBoost = 10;     // optional boost for weaker right motor
+
+void setup() {
+  pinMode(S0, OUTPUT);
+  pinMode(S1, OUTPUT);
+  pinMode(S2, OUTPUT);
+  pinMode(S3, OUTPUT);
+  pinMode(signal, INPUT);
+
+  pinMode(in1, OUTPUT);
+  pinMode(in2, OUTPUT);
+  pinMode(in3, OUTPUT);
+  pinMode(in4, OUTPUT);
+
+  pinMode(rightSensor, INPUT);
+  pinMode(centerSensor, INPUT);
+  pinMode(leftSensor, INPUT);
+
+  digitalWrite(S0, HIGH);
+  digitalWrite(S1, LOW);
+
+  Serial.begin(9600);
+}
+
+void loop() {
+  int forwardSpeed = 120;
+  int hardTurnSpeed = 70;
+  int searchSpeed = 85;
+
+  // -------------------------
+  // Read color sensor
+  // -------------------------
+  digitalWrite(S2, LOW);
+  digitalWrite(S3, LOW);
+  delay(2);
+  red1 = pulseIn(signal, LOW, 10000);
+
+  digitalWrite(S2, HIGH);
+  digitalWrite(S3, HIGH);
+  delay(2);
+  green1 = pulseIn(signal, LOW, 10000);
+
+  digitalWrite(S2, LOW);
+  digitalWrite(S3, HIGH);
+  delay(2);
+  blue1 = pulseIn(signal, LOW, 10000);
+
+  // -------------------------
+  // Read line sensors
+  // Assumption here:
+  // with !digitalRead(...)
+  // 1 = white line
+  // 0 = black background
+  // -------------------------
+  int rightValue = !digitalRead(rightSensor);
+  int centerValue = !digitalRead(centerSensor);
+  int leftValue = !digitalRead(leftSensor);
+
+  // Debug
+  Serial.print("L: ");
+  Serial.print(leftValue);
+  Serial.print(" C: ");
+  Serial.print(centerValue);
+  Serial.print(" R: ");
+  Serial.print(rightValue);
+  Serial.print(" | red: ");
+  Serial.print(red1);
+  Serial.print(" green: ");
+  Serial.print(green1);
+  Serial.print(" blue: ");
+  Serial.println(blue1);
+
+  // -------------------------
+  // Color behavior
+  // -------------------------
+
+  // RED = stop
+  if (red1 + 60 < green1 - 45 && red1 + 50 < blue1) {
+    stopMotors();
+  }
+
+  // YELLOW = slower line following
+  else if (blue1 < red1 + 60 && blue1 < green1 - 45) {
+    followLine(100, 70, 80, leftValue, centerValue, rightValue);
+  }
+
+  // GREEN = normal line following
+  else if (green1 < red1 + 60 && green1 - 45 < blue1) {
+    followLine(forwardSpeed, hardTurnSpeed, searchSpeed, leftValue, centerValue, rightValue);
+  }
+
+  // DEFAULT = still follow line
+  else {
+    followLine(forwardSpeed, hardTurnSpeed, searchSpeed, leftValue, centerValue, rightValue);
+  }
+
+  delay(1);
+}
+
+void followLine(int forwardSpeed, int hardTurnSpeed, int searchSpeed,
+                int leftValue, int centerValue, int rightValue) {
+
+  // centered on white line
+  if (centerValue == 1 && leftValue == 0 && rightValue == 0) {
+    lastDirection = 0;
+    moveForward(forwardSpeed);
+  }
+
+  // line is to the left, so turn left
+  else if (leftValue == 1 && centerValue == 0) {
+    lastDirection = -1;
+    moveLeft(forwardSpeed, hardTurnSpeed);
+  }
+
+  // line is to the right, so turn right
+  else if (rightValue == 1 && centerValue == 0) {
+    lastDirection = 1;
+    moveRight(forwardSpeed, hardTurnSpeed);
+  }
+
+  // center + left both see white
+  else if (centerValue == 1 && leftValue == 1 && rightValue == 0) {
+    lastDirection = -1;
+    moveLeft(forwardSpeed, hardTurnSpeed);
+  }
+
+  // center + right both see white
+  else if (centerValue == 1 && rightValue == 1 && leftValue == 0) {
+    lastDirection = 1;
+    moveRight(forwardSpeed, hardTurnSpeed);
+  }
+
+  // all three see white
+  else if (centerValue == 1 && leftValue == 1 && rightValue == 1) {
+    lastDirection = 0;
+    moveForward(forwardSpeed);
+  }
+
+  // no sensor sees white, search in last known direction
+  else {
+    if (lastDirection == -1) {
+      moveLeft(searchSpeed, 70);
+    }
+    else if (lastDirection == 1) {
+      moveRight(searchSpeed, 70);
+    }
+    else {
+      moveForward(searchSpeed);
+    }
+  }
+}
+
+void moveForward(int speedVal) {
+  analogWrite(in1, 0);
+  analogWrite(in2, constrain(speedVal + rightBoost, 0, 255));
+  analogWrite(in3, constrain(speedVal, 0, 255));
+  analogWrite(in4, 0);
+}
+
+void moveLeft(int hSpeed, int lSpeed) {
+  analogWrite(in1, 0);
+  analogWrite(in2, constrain(hSpeed + rightBoost, 0, 255));
+  analogWrite(in3, constrain(lSpeed, 0, 255));
+  analogWrite(in4, 0);
+}
+
+void moveRight(int hSpeed, int lSpeed) {
+  analogWrite(in1, 0);
+  analogWrite(in2, constrain(lSpeed + rightBoost, 0, 255));
+  analogWrite(in3, constrain(hSpeed, 0, 255));
+  analogWrite(in4, 0);
+}
+
+void stopMotors() {
+  analogWrite(in1, 0);
+  analogWrite(in2, 0);
+  analogWrite(in3, 0);
+  analogWrite(in4, 0);
+}
